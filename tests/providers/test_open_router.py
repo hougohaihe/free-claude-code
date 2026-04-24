@@ -107,7 +107,7 @@ def mock_rate_limiter():
     async def _slot():
         yield
 
-    with patch("providers.open_router.client.GlobalRateLimiter") as mock:
+    with patch("providers.anthropic_compat.GlobalRateLimiter") as mock:
         instance = mock.get_instance.return_value
 
         async def _passthrough(fn, *args, **kwargs):
@@ -135,7 +135,7 @@ def test_init_uses_httpx_client_with_proxy_and_timeouts():
         http_connect_timeout=5.0,
     )
 
-    with patch("providers.open_router.client.httpx.AsyncClient") as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         provider = OpenRouterProvider(config)
 
     assert provider._api_key == "test_openrouter_key"

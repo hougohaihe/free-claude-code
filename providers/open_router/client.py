@@ -2,21 +2,13 @@
 
 import json
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-from loguru import logger
-
-from providers.base import BaseProvider, ProviderConfig
-from providers.common import (
-    SSEBuilder,
-    append_request_id,
-    get_user_facing_error_message,
-    map_error,
-)
-from providers.rate_limit import GlobalRateLimiter
+from providers.anthropic_compat import AnthropicMessagesProvider, StreamChunkMode
+from providers.base import ProviderConfig
+from providers.common import SSEBuilder, append_request_id
 
 from .request import build_request_body
 
@@ -33,33 +25,17 @@ class _SSEFilterState:
     dropped_indexes: set[int] = field(default_factory=set)
 
 
-class OpenRouterProvider(BaseProvider):
+class OpenRouterProvider(AnthropicMessagesProvider):
     """OpenRouter provider using the Anthropic-compatible messages API."""
 
-    def __init__(self, config: ProviderConfig):
-        super().__init__(config)
-        self._provider_name = "OPENROUTER"
-        self._api_key = config.api_key
-        self._base_url = (config.base_url or OPENROUTER_BASE_URL).rstrip("/")
-        self._global_rate_limiter = GlobalRateLimiter.get_instance(
-            rate_limit=config.rate_limit,
-            rate_window=config.rate_window,
-            max_concurrency=config.max_concurrency,
-        )
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            proxy=config.proxy or None,
-            timeout=httpx.Timeout(
-                config.http_read_timeout,
-                connect=config.http_connect_timeout,
-                read=config.http_read_timeout,
-                write=config.http_write_timeout,
-            ),
-        )
+    stream_chunk_mode: StreamChunkMode = "event"
 
-    async def cleanup(self) -> None:
-        """Release HTTP client resources."""
-        await self._client.aclose()
+    def __init__(self, config: ProviderConfig):
+        super().__init__(
+            config,
+            provider_name="OPENROUTER",
+            default_base_url=OPENROUTER_BASE_URL,
+        )
 
     def _build_request_body(self, request: Any) -> dict:
         """Internal helper for tests and direct request dispatch."""
@@ -68,20 +44,14 @@ class OpenRouterProvider(BaseProvider):
             thinking_enabled=self._is_thinking_enabled(request),
         )
 
-    async def _send_stream_request(self, body: dict) -> httpx.Response:
-        """Create a streaming messages response from OpenRouter."""
-        request = self._client.build_request(
-            "POST",
-            "/messages",
-            json=body,
-            headers={
-                "Accept": "text/event-stream",
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-                "anthropic-version": _ANTHROPIC_VERSION,
-            },
-        )
-        return await self._client.send(request, stream=True)
+    def _request_headers(self) -> dict[str, str]:
+        """Return OpenRouter's Anthropic-compatible messages headers."""
+        return {
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "anthropic-version": _ANTHROPIC_VERSION,
+        }
 
     @staticmethod
     def _format_sse_event(event_name: str | None, data_text: str) -> str:
@@ -167,106 +137,40 @@ class OpenRouterProvider(BaseProvider):
 
         return event
 
-    async def _iter_sse_events(self, response: httpx.Response) -> AsyncIterator[str]:
-        """Group line-delimited SSE responses into full SSE events."""
-        event_lines: list[str] = []
-        async for line in response.aiter_lines():
-            if line:
-                event_lines.append(line)
-                continue
-            if event_lines:
-                yield "\n".join(event_lines) + "\n\n"
-                event_lines.clear()
-        if event_lines:
-            yield "\n".join(event_lines) + "\n\n"
+    def _new_stream_state(self, request: Any, *, thinking_enabled: bool) -> Any:
+        """Create per-stream state for thinking block filtering."""
+        return _SSEFilterState()
+
+    def _transform_stream_event(
+        self,
+        event: str,
+        state: Any,
+        *,
+        thinking_enabled: bool,
+    ) -> str | None:
+        """Drop thinking events when thinking is disabled."""
+        if thinking_enabled:
+            return event
+        if isinstance(state, _SSEFilterState):
+            return self._filter_sse_event(event, state)
+        return event
+
+    def _format_error_message(self, base_message: str, request_id: str | None) -> str:
+        """Keep OpenRouter's existing request-id suffix format."""
+        return append_request_id(base_message, request_id)
 
     def _emit_error_events(
         self,
         *,
-        model: str,
+        request: Any,
         input_tokens: int,
         error_message: str,
-        include_message_start: bool,
+        sent_any_event: bool,
     ) -> Iterator[str]:
         """Emit the existing Anthropic SSE error shape."""
-        sse = SSEBuilder(f"msg_{uuid.uuid4()}", model, input_tokens)
-        if include_message_start:
+        sse = SSEBuilder(f"msg_{uuid.uuid4()}", request.model, input_tokens)
+        if not sent_any_event:
             yield sse.message_start()
         yield from sse.emit_error(error_message)
         yield sse.message_delta("end_turn", 1)
         yield sse.message_stop()
-
-    async def stream_response(
-        self,
-        request: Any,
-        input_tokens: int = 0,
-        *,
-        request_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream response via OpenRouter's Anthropic-compatible endpoint."""
-        tag = self._provider_name
-        req_tag = f" request_id={request_id}" if request_id else ""
-        thinking_enabled = self._is_thinking_enabled(request)
-        body = self._build_request_body(request)
-
-        logger.info(
-            "{}_STREAM:{} model={} msgs={} tools={}",
-            tag,
-            req_tag,
-            body.get("model"),
-            len(body.get("messages", [])),
-            len(body.get("tools", [])),
-        )
-
-        response: httpx.Response | None = None
-        state = _SSEFilterState()
-        sent_any_event = False
-
-        async with self._global_rate_limiter.concurrency_slot():
-            try:
-                response = await self._global_rate_limiter.execute_with_retry(
-                    self._send_stream_request, body
-                )
-
-                if response.status_code != 200:
-                    response.raise_for_status()
-
-                async for event in self._iter_sse_events(response):
-                    output_event = event
-                    if not thinking_enabled:
-                        output_event = self._filter_sse_event(event, state)
-                    if output_event is None:
-                        continue
-                    sent_any_event = True
-                    yield output_event
-
-            except Exception as error:
-                logger.error(
-                    "{}_ERROR:{} {}: {}", tag, req_tag, type(error).__name__, error
-                )
-                mapped_error = map_error(error)
-                if getattr(mapped_error, "status_code", None) == 405:
-                    base_message = (
-                        f"Upstream provider {tag} rejected the request method "
-                        "or endpoint (HTTP 405)."
-                    )
-                else:
-                    base_message = get_user_facing_error_message(
-                        mapped_error, read_timeout_s=self._config.http_read_timeout
-                    )
-                error_message = append_request_id(base_message, request_id)
-
-                if response is not None and not response.is_closed:
-                    await response.aclose()
-
-                for event in self._emit_error_events(
-                    model=request.model,
-                    input_tokens=input_tokens,
-                    error_message=error_message,
-                    include_message_start=not sent_any_event,
-                ):
-                    yield event
-                return
-            finally:
-                if response is not None and not response.is_closed:
-                    await response.aclose()
