@@ -1,59 +1,57 @@
-"""Base provider interface - extend this to implement your own provider."""
+"""Base provider interface for free-claude-code."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
-from typing import Any
-
-from pydantic import BaseModel
+from dataclasses import dataclass, field
+from typing import Iterator, Optional
 
 
-class ProviderConfig(BaseModel):
-    """Configuration for a provider.
+@dataclass
+class Message:
+    """Represents a chat message."""
+    role: str  # 'user' or 'assistant'
+    content: str
 
-    Base fields apply to all providers. Provider-specific parameters
-    (e.g. NIM temperature, top_p) are passed by the provider constructor.
-    """
 
-    api_key: str
-    base_url: str | None = None
-    rate_limit: int | None = None
-    rate_window: int = 60
-    max_concurrency: int = 5
-    http_read_timeout: float = 300.0
-    http_write_timeout: float = 10.0
-    http_connect_timeout: float = 2.0
-    enable_thinking: bool = True
-    proxy: str = ""
+@dataclass
+class CompletionRequest:
+    """Encapsulates a completion request."""
+    messages: list[Message]
+    model: str = "claude-3-5-sonnet-20241022"
+    max_tokens: int = 8096
+    system: Optional[str] = None
+    stream: bool = True
+    extra: dict = field(default_factory=dict)
+
+
+@dataclass
+class CompletionChunk:
+    """A single streamed chunk from a provider."""
+    text: str
+    finish_reason: Optional[str] = None
+    model: Optional[str] = None
 
 
 class BaseProvider(ABC):
-    """Base class for all providers. Extend this to add your own."""
+    """Abstract base class all providers must implement."""
 
-    def __init__(self, config: ProviderConfig):
-        self._config = config
-
-    def _is_thinking_enabled(self, request: Any) -> bool:
-        """Return whether thinking should be enabled for this request."""
-        thinking = getattr(request, "thinking", None)
-        request_enabled = (
-            thinking.enabled
-            if thinking is not None and hasattr(thinking, "enabled")
-            else True
-        )
-        return self._config.enable_thinking and request_enabled
+    name: str = "base"
+    supported_models: list[str] = []
 
     @abstractmethod
-    async def cleanup(self) -> None:
-        """Release any resources held by this provider."""
+    def complete(self, request: CompletionRequest) -> Iterator[CompletionChunk]:
+        """Yield completion chunks for the given request."""
+        ...
 
     @abstractmethod
-    async def stream_response(
-        self,
-        request: Any,
-        input_tokens: int = 0,
-        *,
-        request_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream response in Anthropic SSE format."""
-        if False:
-            yield ""  # Required for ty/mypy to accept abstract async generator
+    def is_available(self) -> bool:
+        """Return True if the provider is properly configured and reachable."""
+        ...
+
+    def validate_model(self, model: str) -> bool:
+        """Check whether the requested model is supported."""
+        if not self.supported_models:
+            return True  # provider accepts any model name
+        return model in self.supported_models
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} name={self.name!r}>"
