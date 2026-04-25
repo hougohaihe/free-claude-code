@@ -4,3 +4,5 @@ IMPORTANT: Ensure you've thoroughly reviewed the [AGENTS.md](AGENTS.md) file bef
 
 - Forked for learning purposes and local experimentation
 - Remember to keep API keys out of version control (use `.env` locally)
+- Prefer running with `--verbose` flag during development to see full request/response logs
+- When testing locally, use a dedicated test conversation to avoid cluttering history
