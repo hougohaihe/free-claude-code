@@ -17,7 +17,7 @@ class CompletionRequest:
     """Encapsulates a completion request."""
     messages: list[Message]
     model: str = "claude-3-5-sonnet-20241022"
-    max_tokens: int = 8096
+    max_tokens: int = 4096  # lowered from 8096 to stay within free-tier limits
     system: Optional[str] = None
     stream: bool = True
     extra: dict = field(default_factory=dict)
