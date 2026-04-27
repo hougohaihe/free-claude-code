@@ -1,3 +1,4 @@
+```
 <div align="center">
 
 # 🤖 Free Claude Code
@@ -20,7 +21,7 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
 
 </div>
 
-> **Personal fork note:** I primarily use this with OpenRouter pointed at `google/gemini-flash-1.5` for day-to-day tasks and NVIDIA NIM for heavier Sonnet-class work. YMMV with other models.
+> **Personal fork note:** I primarily use this with OpenRouter pointed at `google/gemini-2.5-flash` for day-to-day tasks and NVIDIA NIM for heavier Sonnet-class work. Switched from `gemini-flash-1.5` — 2.5-flash handles tool calls noticeably better in my testing. YMMV with other models.
 
 <div align="center">
   <img src="pic.png" alt="Free Claude Code in action" width="700">
@@ -37,5 +38,4 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
 | **Per-Model Mapping**      | Route Opus / Sonnet / Haiku to different models and providers. Mix providers freely             |
 | **Thinking Token Support** | Parses `<think>` tags and `reasoning_content` into native Claude thinking blocks                |
 | **Heuristic Tool Parser**  | Models outputting tool calls as text are auto-parsed into structured tool use                   |
-| **Request Optimization**   | 5 categories of trivial API calls intercepted locally, saving quota and latency                 |
-| **Smart Rate Limiting**    | Proactive rolling-window thrott
+```
