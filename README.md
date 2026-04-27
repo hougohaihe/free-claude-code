@@ -24,6 +24,8 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
 > **Personal fork note:** I primarily use this with OpenRouter pointed at `google/gemini-2.5-flash` for day-to-day tasks and NVIDIA NIM for heavier Sonnet-class work. Switched from `gemini-flash-1.5` — 2.5-flash handles tool calls noticeably better in my testing. YMMV with other models.
 >
 > **Tip:** If you hit OpenRouter rate limits during long sessions, set `OPENROUTER_FALLBACK_MODEL=google/gemini-2.5-flash-lite` as a cheaper fallback — it's fast enough for most file edits and bash commands.
+>
+> **Tip 2:** On Linux, I run the proxy with `systemd` so it auto-starts on boot. Saves having to remember to launch it before opening VS Code. See my [systemd unit snippet](#) in the notes below.
 
 <div align="center">
   <img src="pic.png" alt="Free Claude Code in action" width="700">
@@ -37,7 +39,4 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
 | **Zero Cost**              | 40 req/min free on NVIDIA NIM. Free models on OpenRouter. Fully local with LM Studio            |
 | **Drop-in Replacement**    | Set 2 env vars. No modifications to Claude Code CLI or VSCode extension needed                  |
 | **5 Providers**            | NVIDIA NIM, OpenRouter, DeepSeek, LM Studio (local), llama.cpp (`llama-server`)                  |
-| **Per-Model Mapping**      | Route Opus / Sonnet / Haiku to different models and providers. Mix providers freely             |
-| **Thinking Token Support** | Parses `<think>` tags and `reasoning_content` into native Claude thinking blocks                |
-| **Heuristic Tool Parser**
-```
+| **Per-Model Mapping**      | Route Opus / Sonnet / Haiku to different mod
