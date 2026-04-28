@@ -11,14 +11,17 @@ from .base import BaseProvider, CompletionChunk, CompletionRequest, Message
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 SUPPORTED_MODELS = [
+    "gemini-2.5-pro-preview-05-06",
+    "gemini-2.5-flash-preview-04-17",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
     "gemini-1.5-pro",
-    "gemini-2.5-pro-preview-05-06",
-    "gemini-2.5-flash-preview-04-17",
 ]
+
+# Default model to use when none is specified - prefer the latest stable flash model
+DEFAULT_MODEL = "gemini-2.5-flash-preview-04-17"
 
 
 class GeminiProvider(BaseProvider):
@@ -99,20 +102,4 @@ class GeminiProvider(BaseProvider):
                     import json
 
                     try:
-                        chunk_data = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-
-                    choices = chunk_data.get("choices", [])
-                    if not choices:
-                        continue
-
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content", "")
-                    finish_reason = choices[0].get("finish_reason")
-
-                    if content or finish_reason:
-                        yield CompletionChunk(
-                            text=content or "",
-                            finish_reason=finish_reason,
-                        )
+                        c
