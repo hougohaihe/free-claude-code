@@ -19,6 +19,7 @@ class OpenRouterProvider(BaseProvider):
         "anthropic/claude-3.5-sonnet",
         "anthropic/claude-3-opus",
         "anthropic/claude-3-haiku",
+        "anthropic/claude-3.5-haiku",  # added: cheaper/faster option
     ]
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -48,7 +49,8 @@ class OpenRouterProvider(BaseProvider):
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/free-claude-code",
+            # Using my own repo URL as the referrer
+            "HTTP-Referer": "https://github.com/my-fork/free-claude-code",
         }
 
         with httpx.stream("POST", _BASE_URL, json=payload, headers=headers, timeout=120) as resp:
